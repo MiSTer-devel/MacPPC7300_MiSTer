@@ -16,8 +16,8 @@ The bitstreams are in [`releases/`](releases/):
 
 | File | CPU clock |
 |---|---|
-| `MacPPC7300_OC_20261022.rbf` | 100 MHz, about 40 % faster. Works on the DE10-Nano, MiSTer Pi and SuperStation. |
-| `MacPPC7300_20261022.rbf` | 70 MHz, the speed the design is timed for. Use it on other hardware, or if the 100 MHz file gives a black screen, a grey screen or a crash at "Welcome to Mac OS". |
+| `MacPPC7300_OC_20261113.rbf` | 100 MHz, about 40 % faster. Works on the DE10-Nano, MiSTer Pi and SuperStation. |
+| `MacPPC7300_20261113.rbf` | 70 MHz, the speed the design is timed for. Use it on other hardware, or if the 100 MHz file gives a black screen, a grey screen or a crash at "Welcome to Mac OS". |
 
 Both are the same machine and share the same `games/MacPPC7300/` folder and
 OSD settings.
