@@ -167,6 +167,9 @@ module MacPPC7300_gc
 	output logic [15:0]  snd_left,
 	output logic [15:0]  snd_right,
 	output logic         snd_frame,     // one clock a frame (the samples change the clock after)
+	// the sound AWACS records (MacPPC7300_adc's), signed, new at each snd_tick
+	input  logic signed [15:0] adc_left,
+	input  logic signed [15:0] adc_right,
 
 	// RaDACal to the scan-out: its state, and its colour table in the video clock
 	output logic [7:0]   dac_cr,
@@ -477,6 +480,7 @@ MacPPC7300_awacs awacs (
 	.sel(sel & devs & (sub == 4'h4) & (off[3:2] == 2'd0)), .we, .rn(off[7:4]), .wdata, .be, .rq(awacs_rq),
 	.out_active(s8_active), .do_ready(s8_ready), .do_data(s8_data), .do_put(s8_put),
 	.in_active(s9_active), .di_valid(s9_valid), .di_data(s9_data), .di_take(s9_take),
+	.in_left(adc_left), .in_right(adc_right),
 	.left(snd_left), .right(snd_right), .frame_tick(snd_frame)
 );
 

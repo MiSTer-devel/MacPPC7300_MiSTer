@@ -16,8 +16,22 @@ the channel has not delivered holds the last one. `MacPPC7300.sv` adds the
 CD's audio and the MT32-pi's I2S to it, saturates, and hands `AUDIO_L/R`
 to the framework, whose `audio_out` samples them in its own 24.576 MHz
 clock (a value is taken when two consecutive samples agree) and sends them
-to HDMI and the analog outputs at 48 kHz. Channel 9 (sound in) is a stub
-(`SOUND_IN_DMA = 0`).
+to HDMI and the analog outputs at 48 kHz.
+
+Channel 9 (sound in; `SOUND_IN_DMA = 1` since 2026-11-13, 0 leaves its
+registers alone) takes frames from the board's ADC, the DE10-nano's
+LTC2308 behind the audio-in jack of the Analog I/O board or the ADC add-on
+(`rtl/machine/MacPPC7300_adc.sv`; the OSD's "Audio input": Off, Mono,
+Stereo, acting at once). At each of AWACS's 88,200 Hz ticks channels 0
+(left) and 1 (right) are converted, the DC level they sit on is followed
+(7 Hz) and taken off, and AWACS puts the mean of a frame's 2 to 12 samples
+into the channel, in the out channel's byte order. The framework's
+`ltc2308.sv` is not used: it would clock the chip at 50 MHz of this
+machine's 100 (the chip's limit is 40) and needs a constant clock. The
+codec's input selection and gain change nothing. `verilator/adc_tb.sv`
+(`make adc`) runs it against a model of the chip, at 100 and at 70 MHz.
+**Not yet heard on a board** (the user had no source connected,
+2026-11-13).
 
 ## The saga, in order
 
@@ -132,5 +146,8 @@ to HDMI and the analog outputs at 48 kHz. Channel 9 (sound in) is a stub
 - Altair's startup buzz (above).
 - The CD's audio and the MT32-pi mix are unchanged and untested by ear
   since the rate fix.
-- Sound in (channel 9) is a stub; a recording program waits for ever.
+- Sound in (channel 9, the ADC) is untested on a board: whether Mac OS's
+  recording runs the channel as the bench does, the jack's level against
+  the 13 bits taken, and whether its ring reaches the ADC's channel 1
+  (Stereo) are all to be seen.
 - The user's request: an OSD "Power" button that presses the ADB power key.

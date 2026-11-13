@@ -82,7 +82,10 @@ still runs, without those three.
 ## What does not work (yet)
 
 - Writing to floppy disks. They show as locked.
-- Sound input. Recording gives silence.
+- Sound input is untested on a board. The OSD's Audio page has "Audio
+  input" (Off, Mono, Stereo): the audio-in jack of the Analog I/O board or
+  the ADC add-on (the DE10-nano's ADC, channels 0 and 1) as the Mac's sound
+  input, whichever source Mac OS selects. Off records silence.
 - The printer port has no line, so there's no LocalTalk network or printer
   on it.
 - No external SCSI bus and no PCI cards.

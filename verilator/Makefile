@@ -163,6 +163,19 @@ $(BUILD)/enet/enet_tb: $(MACH)/MacPPC7300_enet.sv $(HERE)enet_main.cpp $(HERE)Ma
 		> $(BUILD)/enet/build.log 2>&1 || (cat $(BUILD)/enet/build.log; false)
 	@grep -E '^%Warning' $(BUILD)/enet/build.log || true
 
+# the audio input: MacPPC7300_adc and AWACS's in path against a model of the LTC2308 (its
+# timing limits checked), at the CPU's 100 MHz and at 70
+adc: $(BUILD)/adc/adc_tb
+	$(BUILD)/adc/adc_tb
+	$(BUILD)/adc/adc_tb +slow
+
+$(BUILD)/adc/adc_tb: $(MACH)/MacPPC7300_adc.sv $(MACH)/MacPPC7300_awacs.sv $(HERE)adc_tb.sv $(HERE)Makefile
+	@mkdir -p $(BUILD)/adc
+	@$(VERILATOR) --binary --timing -j 0 -Wno-fatal -Wno-WIDTH -Wno-STMTDLY -Wno-INITIALDLY -Wno-BLKSEQ \
+		--top-module adc_tb -Mdir $(BUILD)/adc -o adc_tb \
+		$(MACH)/MacPPC7300_adc.sv $(MACH)/MacPPC7300_awacs.sv $(HERE)adc_tb.sv \
+		> $(BUILD)/adc/build.log 2>&1 || (cat $(BUILD)/adc/build.log; false)
+
 vramwc: $(BUILD)/vramwc/vramwc_tb
 
 $(BUILD)/vramwc/vramwc_tb: $(MACH)/MacPPC7300_vramwc.sv $(HERE)vramwc_main.cpp $(HERE)Makefile
@@ -198,4 +211,4 @@ lint:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all core machine gui sdram cdc cuda scsi escc enet lint clean
+.PHONY: all core machine gui sdram cdc cuda scsi escc enet adc lint clean

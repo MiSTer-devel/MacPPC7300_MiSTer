@@ -103,7 +103,9 @@ its 2,097,152 Hz bus. What is left out around it:
 - The modem port's RTS and DTR as software sets them (WR5): the UART's RTS
   is "a received byte waits", its DTR the other end's own DSR (2026-10-08,
   as the Quadra 800 core); the printer port has no line.
-- Sound input (AWACS records silence).
+- Sound input's selection and gain (AWACS records the board's ADC whatever
+  the codec selects, silence with the OSD's "Audio input" off; untested on
+  a board).
 - A network unless the OSD's Ethernet is on (MACE's cable is unplugged then).
 - Writing to a floppy disk (SWIM3 reads images only; every disk shows as
   locked).
