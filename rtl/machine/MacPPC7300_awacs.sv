@@ -40,17 +40,15 @@
 //  a frame left after that is dropped, so the next start is frame-aligned.
 //
 //  In: in_left / in_right are the input's samples, new at each snd_tick
-//  (88,200 Hz), 13 bits at the top of 16 (bits 2-0 are not looked at). A
-//  frame's sample is the mean of the 2 to 12 its ticks brought (the sum
-//  times 65536 / the count, a multiplier; a boxcar, whose zeros fall on the
-//  frame rate's multiples). The clock after a frame's last tick the mean is
-//  taken into the product's register, and while the in channel is active it
-//  is offered from there to the channel (di_valid / di_take), 4 bytes, left
-//  then right, in the order the out channel's have; no FIFO (2026-11-13:
-//  the 8 bytes there were cost area for nothing, the channel having 4 of
-//  its own). A frame that finds the one before not all taken, 2 ticks or
-//  more later, is lost (an overrun). Whatever input the codec's register 0
-//  selects (CD, line, microphone), it is this one, at this gain.
+//  (88,200 Hz). A frame's sample is the mean of the 2 to 12 its ticks
+//  brought (the sum times 65536 / the count, a multiplier; a boxcar, whose
+//  zeros fall on the frame rate's multiples). While the in channel is
+//  active, each frame puts its 4 bytes (left then right, in the order the
+//  out channel's have) into a FIFO of 8 that the channel takes (di_valid /
+//  di_take), two clocks after the frame; a frame that finds more than 4
+//  bytes there is lost (an overrun). Emptied while the channel is not
+//  active. Whatever input the codec's register 0 selects (CD, line,
+//  microphone), it is this one, at this gain.
 //
 //  Time: snd_tick comes at twice 44,100 Hz (88,200 Hz); a frame is 2, 3,
 //  4, 5, 6, 8, 10 or 12 ticks.
@@ -159,10 +157,11 @@ assign do_ready = o_n < 4'd8 && out_active;
 wire   o_pop    = frame && o_n >= 4'd4;    // a whole frame leaves
 wire [7:0] b0 = ob[o_rd], b1 = ob[3'(o_rd + 3'd1)], b2 = ob[3'(o_rd + 3'd2)], b3 = ob[3'(o_rd + 3'd3)];
 
-// ---- in: the frame's mean, held for the channel ---------------------------------------------
-logic signed [16:0] acc_l, acc_r;          // the frame's 13-bit samples so far (12 of them fit)
-logic signed [34:0] prod_l, prod_r;        // a whole frame's, times 65536 / the samples in a frame
-logic        i_st;                         // the frame's last tick was the clock before: acc_* are whole
+// ---- in: the frame's mean, then an 8-byte FIFO ----------------------------------------------
+logic signed [19:0] acc_l, acc_r;          // the frame's samples so far
+logic signed [19:0] sum_l, sum_r;          // a whole frame's
+logic signed [37:0] prod_l, prod_r;        // times 65536 / the samples in a frame
+logic [1:0]  i_st;                         // a frame ended 1 (bit 0) and 2 (bit 1) clocks ago
 logic [16:0] recip;                        // rounded down, so that 12 full-scale samples stay in 16 bits
 always_comb begin
 	case (fdiv)
@@ -176,15 +175,17 @@ always_comb begin
 		default: recip = 17'd5461;
 	endcase
 end
-wire signed [16:0] in_l = {{4{in_left[15]}},  in_left[15:3]};
-wire signed [16:0] in_r = {{4{in_right[15]}}, in_right[15:3]};
-wire [15:0] i_l = prod_l[28:13], i_r = prod_r[28:13];   // the mean, back at the top of 16 bits
+wire signed [19:0] in_l20 = {{4{in_left[15]}}, in_left};
+wire signed [19:0] in_r20 = {{4{in_right[15]}}, in_right};
+wire [15:0] i_l = prod_l[31:16], i_r = prod_r[31:16];
 
-logic        i_v;                          // prod_* hold a frame the channel has not all taken
-logic [1:0]  i_k;                          // its byte offered
-wire  [15:0] i_w = i_k[1] ? i_r : i_l;
-assign di_valid = i_v;
-assign di_data  = (i_k[0] ^ byte_swap) ? i_w[7:0] : i_w[15:8];
+logic [7:0] ib [8];
+logic [2:0] i_rd;                          // the oldest byte
+logic [3:0] i_n;                           // bytes held
+assign di_valid = i_n != 4'd0;
+assign di_data  = ib[i_rd];
+wire        i_push = i_st[1] && in_active && i_n <= 4'd4;
+wire [2:0]  i_wr   = i_rd + i_n[2:0];
 
 always_ff @(posedge clk) begin
 	if (snd_tick) ftick <= frame ? 4'd0 : ftick + 4'd1;
@@ -202,22 +203,31 @@ always_ff @(posedge clk) begin
 
 	// in
 	if (snd_tick) begin
-		acc_l <= (ftick == 4'd0 ? 17'sd0 : acc_l) + in_l;
-		acc_r <= (ftick == 4'd0 ? 17'sd0 : acc_r) + in_r;
+		acc_l <= frame ? 20'sd0 : acc_l + in_l20;
+		acc_r <= frame ? 20'sd0 : acc_r + in_r20;
+		if (frame) begin
+			sum_l <= acc_l + in_l20;
+			sum_r <= acc_r + in_r20;
+		end
 	end
-	i_st <= frame;
-	if (di_take) begin
-		i_k <= i_k + 2'd1;
-		if (i_k == 2'd3) i_v <= 1'b0;
+	i_st <= {i_st[0], frame};
+	if (i_st[0]) begin
+		prod_l <= sum_l * $signed({1'b0, recip});
+		prod_r <= sum_r * $signed({1'b0, recip});
 	end
-	if (i_st && !i_v) begin
-		prod_l <= acc_l * $signed({1'b0, recip});
-		prod_r <= acc_r * $signed({1'b0, recip});
-		i_v    <= 1'b1;
+	if (i_push) begin
+		ib[i_wr]            <= byte_swap ? i_l[7:0]  : i_l[15:8];
+		ib[3'(i_wr + 3'd1)] <= byte_swap ? i_l[15:8] : i_l[7:0];
+		ib[3'(i_wr + 3'd2)] <= byte_swap ? i_r[7:0]  : i_r[15:8];
+		ib[3'(i_wr + 3'd3)] <= byte_swap ? i_r[15:8] : i_r[7:0];
 	end
 	if (!in_active) begin
-		i_v <= 1'b0;
-		i_k <= 2'd0;
+		i_n  <= 4'd0;
+		i_rd <= 3'd0;
+	end
+	else begin
+		i_n <= i_n - (di_take ? 4'd1 : 4'd0) + (i_push ? 4'd4 : 4'd0);
+		if (di_take) i_rd <= i_rd + 3'd1;
 	end
 
 	// the registers
@@ -241,11 +251,13 @@ always_ff @(posedge clk) begin
 		ftick       <= 4'd0;
 		o_rd        <= 3'd0;
 		o_n         <= 4'd0;
-		i_v         <= 1'b0;
-		i_k         <= 2'd0;
-		i_st        <= 1'b0;
-		acc_l       <= 17'sd0;
-		acc_r       <= 17'sd0;
+		i_n         <= 4'd0;
+		i_rd        <= 3'd0;
+		i_st        <= 2'b00;
+		acc_l       <= 20'sd0;
+		acc_r       <= 20'sd0;
+		sum_l       <= 20'sd0;
+		sum_r       <= 20'sd0;
 		left        <= 16'h0;
 		right       <= 16'h0;
 	end
