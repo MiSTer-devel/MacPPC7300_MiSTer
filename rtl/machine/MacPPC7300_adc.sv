@@ -28,9 +28,13 @@
 //  1, 0), so the tick's first conversion (channel 0's, set by the last
 //  tick's second) sends channel 1's word and the second channel 0's.
 //
-//  The jack's signal sits on a DC level (and an open input anywhere), so
-//  each channel's level is followed slowly (a 2,048-sample time constant:
-//  7 Hz) and taken off; what is left, 13 bits signed, is the sample's top.
+//  The chip reads 0 to 4.096 V and the boards wire the jack straight to it,
+//  so the signal must be given a DC level near the middle of that range
+//  before the jack (a capacitor and two resistors: docs/MacPPC7300_sound.md,
+//  "The audio-in jack"); a source plugged straight in rests at 0 V and
+//  loses its negative half, which nothing here can restore. Each channel's
+//  level is followed slowly (a 2,048-sample time constant: 7 Hz) and taken
+//  off; what is left, 13 bits signed, is the sample's top.
 //  The first three rounds after the input is turned on only set the level.
 //
 //  mode (quasi-static): 0 off (no conversions, both samples 0), 1 mono

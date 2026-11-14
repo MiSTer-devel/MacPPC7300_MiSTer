@@ -30,8 +30,59 @@ into the channel, in the out channel's byte order. The framework's
 machine's 100 (the chip's limit is 40) and needs a constant clock. The
 codec's input selection and gain change nothing. `verilator/adc_tb.sv`
 (`make adc`) runs it against a model of the chip, at 100 and at 70 MHz.
-**Not yet heard on a board** (the user had no source connected,
-2026-11-13).
+
+### The audio-in jack
+
+A tester's recordings (DECK II, Pro Tools 3.4; 2026-11-14) were distorted,
+their waveforms on one side of zero only. It is the board, not this logic
+(reviewed again that day, nothing found):
+
+- The ADC add-on (1.1, 1.3) and the Digital Base board (9.2) wire the jack
+  straight to the ADC header: no capacitor, no bias. The DE10-nano adds
+  49.9 ohm in series and 1 nF to ground a channel, the chip's COM is at
+  ground, and its range is 0 to 4.096 V (schematics, read 2026-11-14). The
+  clones' boards (MiSTer Pi, SuperStation) were not found.
+- So a line signal, which swings about 0 V, loses its negative half: the
+  chip reads 0 there, and the level followed here is only the mean of what
+  is left. Nothing in the core can bring that half back, and the chip's
+  bipolar mode does not either (its pins still read nothing below ground).
+  The MiSTer wiki's "ADC-in" page says as much: enough for tape, not for
+  audio. The framework's tape reader (`ltc2308_tape`, thresholds of 16 and
+  64 mV) expects exactly this input.
+- The level is low besides: a consumer source's 0.3 V RMS is a tenth of
+  the range, and there is no gain here.
+- Below -0.3 V the pins are outside the chip's absolute ratings, only the
+  49.9 ohm limiting the current: a 2 V RMS source reaches -2.8 V.
+
+What a clean recording needs, between the source and the jack, per channel
+(**untested**, 2026-11-14; the values are computed, not measured):
+
+```
+                        +5 V (a quiet supply)
+                          |
+                         15k
+            4.7 uF        |
+  source o----||----------+--------o jack (tip: left, ring: right)
+                          |
+                         10k
+                          |
+  source ground o---------+--------o jack sleeve
+```
+
+The pin then rests at 2.0 V and the signal swings about it, up to +/-2 V
+(1.4 V RMS) before clipping; the corner is 5.6 Hz and the source sees 6
+kilohm. An electrolytic capacitor's positive end goes to the jack. For a
+2 V RMS source, 6.2 kilohm in series before the capacitor halves it. The
+supply's noise is recorded at 0.4 times its size, so it wants to be quiet
+(the same 5 V through 100 ohm and 100 uF to ground, for one). The level
+this core takes off is then the 2.0 V, as it was written to expect.
+
+For a quick test with no supply: a 1.5 V cell in series with the tip
+(positive end to the jack) lifts one channel by 1.5 V.
+
+Still unanswered on a board: a recording of silence (bit errors of the
+ADC's serial line at 100 MHz, its SDO taken 30 ns after the SCK edge, 43
+at 70 MHz, with no constraint), and Stereo.
 
 ## The saga, in order
 
@@ -146,8 +197,8 @@ codec's input selection and gain change nothing. `verilator/adc_tb.sv`
 - Altair's startup buzz (above).
 - The CD's audio and the MT32-pi mix are unchanged and untested by ear
   since the rate fix.
-- Sound in (channel 9, the ADC) is untested on a board: whether Mac OS's
-  recording runs the channel as the bench does, the jack's level against
-  the 13 bits taken, and whether its ring reaches the ADC's channel 1
-  (Stereo) are all to be seen.
+- Sound in (channel 9, the ADC) records on a board, half of the wave only
+  ("The audio-in jack", above): the bias circuit there, a recording of
+  silence, and Stereo are all to be tried. The bench (`adc_tb.sv`) has no
+  input resting at 0.
 - The user's request: an OSD "Power" button that presses the ADB power key.
