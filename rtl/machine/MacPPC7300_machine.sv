@@ -194,6 +194,13 @@ module MacPPC7300_machine
 	output logic [15:0]  snd_right,
 	output logic         snd_frame,     // one clock a frame (the samples change the clock after)
 
+	// the sound AWACS records: the board's ADC (MacPPC7300_adc), its pins
+	input  logic [1:0]   adc_mode,      // 0 off (silence), 1 mono, 2 stereo
+	output logic         adc_convst,
+	output logic         adc_sck,
+	output logic         adc_sdi,
+	input  logic         adc_sdo,
+
 	// Grand Central's NVRAM written from outside, a byte a cycle, while
 	// the machine is held in reset
 	input  logic         nv_ld_we,
@@ -686,6 +693,13 @@ logic [9:0]   fd_ra;
 logic [7:0]   fd_q;
 logic [7:0]   itr_st;
 
+// the audio input: a sample of each channel at each of AWACS's ticks
+logic signed [15:0] adc_left, adc_right;
+MacPPC7300_adc adc (
+	.clk, .reset(board_reset), .tick(snd_tick), .mode(adc_mode),
+	.adc_convst, .adc_sck, .adc_sdi, .adc_sdo, .left(adc_left), .right(adc_right)
+);
+
 MacPPC7300_gc #(.SCSI_HZ(SCSI_HZ), .SOUND_IN_DMA(SOUND_IN_DMA)) gc (
 	.clk, .reset(board_reset), .via_tick, .rtxc_tick, .scsi_tick, .us_tick, .snd_tick,
 	.sel(p_sel & p_dev[3]), .we(p_we), .addr(p_a[16:2]), .be(p_be), .wdata(p_wd),
@@ -700,7 +714,7 @@ MacPPC7300_gc #(.SCSI_HZ(SCSI_HZ), .SOUND_IN_DMA(SOUND_IN_DMA)) gc (
 	.scsi_rst, .scsi_bsy, .scsi_sel, .scsi_atn, .scsi_ack, .scsi_req, .scsi_msg, .scsi_cd, .scsi_io, .scsi_db,
 	.dm_req(gdm_req), .dm_we(gdm_we), .dm_line(gdm_line), .dm_addr(gdm_addr), .dm_be(gdm_be),
 	.dm_wdata(gdm_wdata), .dm_ack(gdm_ack), .dm_rdata(gdm_rdata),
-	.snd_left, .snd_right, .snd_frame,
+	.snd_left, .snd_right, .snd_frame, .adc_left, .adc_right,
 	.dac_cr, .dbl_buf_cr, .cursor_x, .cursor_clut, .clk_v, .clut_index, .clut_rgb,
 	.dfin, .dfin_ch, .dfin_type, .dfin_info, .itr_ev, .itr_st, .itr8_ev, .itr8_st, .scc_tr_ev, .scc_tr_info,
 	.fd_m_t, .fd_m_ok, .fd_m_fmt, .fd_m_dc42, .fd_rq_t, .fd_rq_lba, .fd_dn_t, .fd_ra, .fd_q

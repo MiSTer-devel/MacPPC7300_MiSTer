@@ -72,13 +72,12 @@ localparam int SPEED = 0;
 localparam int CPU_MHZ = SPEED == 100 ? 100 : 70;
 localparam int L2_KB = 128;             // 0: no L2 cache (its OSD option then does nothing; saves about 800 ALMs)
 localparam int TRACE = 0;               // 1: the DDR3 trace (syn\mister.py trace), for debugging builds
-localparam int SOUND_IN_DMA = 0;        // 1: DMA channel 9 (sound in, which records silence) a real channel
+localparam int SOUND_IN_DMA = 1;        // 1: DMA channel 9 (sound in, the board's ADC) a real channel; 0: its registers alone
 localparam int PERF = 0;                // 1: the CPU's performance counters, into the trace (syn\perf.py; needs TRACE)
 localparam int SND_TRACE = 0;           // 1: the codec's output frames into the trace (syn\sndtrace.py; needs TRACE)
 
 ///////// Default values for ports not used in this core /////////
 
-assign ADC_BUS  = 'Z;
 assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 
 assign VGA_SL = 0;
@@ -171,6 +170,9 @@ localparam CONF_STR = {
 	"P4O[23:22],Munt ROM,MT-32 v1,MT-32 v2,CM-32L;",
 	"P4O[26:24],SoundFont,0,1,2,3,4,5,6,7;",
 	"P4O[28:27],Show Info,No,Yes,LCD-On,LCD-Auto;",
+	// the ADC behind the I/O board's audio-in jack, as AWACS's sound input; it acts at once
+	"P4-;",
+	"P4O[35:34],Audio input,Off,Mono,Stereo;",
 
 	"P5SC2,NVR,NVRAM image;",
 
@@ -582,7 +584,7 @@ wire [10:0] ps2_key_m = {ps2_key[10:9], !status[38] ? key_sc :
                          key_sc == 9'h11F ? 9'h011 : key_sc == 9'h127 ? 9'h111 : key_sc};
 
 // the whole OSD as the machine took it, and "Changes pending" while a setting differs
-// (not Input's [14] and [38], nor the MT32-pi's [28:20], which act at once)
+// (not Input's [14] and [38], the MT32-pi's [28:20] nor the audio input's [35:34], which act at once)
 reg  [127:0] cfg_m = 0;
 always @(posedge clk_mem) if (cpu_reset_m) cfg_m <= status;
 assign cfg = cfg_m;
@@ -612,6 +614,19 @@ always @(posedge clk_cpu) begin
 	l2_on_c        <= {l2_on_c[0], l2_on_m};
 end
 wire cpu_reset = cpu_reset_s[2];
+
+// the audio input (the LTC2308 behind the I/O board's audio-in jack; MacPPC7300_adc, in the
+// machine, drives it in the CPU's clock): the OSD's choice, 3 taken as off
+reg  [1:0] adc_mode_c [2];
+always @(posedge clk_cpu) begin
+	adc_mode_c[0] <= status[35:34] == 2'd3 ? 2'd0 : status[35:34];
+	adc_mode_c[1] <= adc_mode_c[0];
+end
+wire adc_convst, adc_sck, adc_sdi;
+assign ADC_BUS[3] = adc_sck;
+assign ADC_BUS[2] = 1'bZ;                   // the chip's SDO
+assign ADC_BUS[1] = adc_sdi;
+assign ADC_BUS[0] = adc_convst;
 
 // the clock's seconds, quasi-static: taken once seen the same twice
 reg [31:0] mac_secs_s [2];
@@ -790,6 +805,7 @@ MacPPC7300_system #(.CPU_HZ(70000000), .CPU_HZ_FAST(100000000), .L2_KB(L2_KB), .
 
 	.cpu_req, .cpu_we, .cpu_line, .cpu_addr, .cpu_be, .cpu_wdata, .cpu_ack, .cpu_rdata, .cpu_irq, .cpu_tb_tick,
 	.modem_txd, .modem_rxd, .modem_cts, .modem_rts, .modem_midi, .snd_left, .snd_right,
+	.adc_mode(adc_mode_c[1]), .adc_convst, .adc_sck, .adc_sdi, .adc_sdo(ADC_BUS[2]),
 	.nv_ld_we, .nv_ld_re, .nv_ld_addr, .nv_ld_data, .nv_ld_rack, .nv_ld_q, .nv_wr_cpu,
 	.mon_std(mon_c[1][8:6]), .mon_ext(mon_c[1][5:0]),
 	.ps2_key(ps2_key_m), .ps2_mouse, .joy,   // in the memory clock: MacPPC7300_adb synchronises them

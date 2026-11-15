@@ -6,8 +6,9 @@
 //  The registers as dingusppc's devices/sound/awacs.cpp (AwacsScreamer)
 //  reads and writes them, and the samples moving as the real chip moves
 //  them: 16-bit stereo frames from DMA channel 8 (sound out) to the
-//  machine's audio output, and frames of silence to DMA channel 9 (sound
-//  in), each at the sample rate the control register sets. dingusppc
+//  machine's audio output, and frames from the machine's audio input (the
+//  board's ADC, MacPPC7300_adc; silence while that is off) to DMA channel 9
+//  (sound in), each at the sample rate the control register sets. dingusppc
 //  hands the out channel's bytes to the host's sound card and feeds the in
 //  channel 2,048 zero bytes every 10 ms; here both go at the frame rate.
 //
@@ -38,10 +39,16 @@
 //  What the FIFO holds when the channel stops is played out, and a part of
 //  a frame left after that is dropped, so the next start is frame-aligned.
 //
-//  In: while the in channel is active, each frame puts 4 zero bytes into
-//  a FIFO of 8 that the channel takes (di_valid / di_take); a frame that
-//  finds it full is lost (an overrun). Emptied while the channel is not
-//  active.
+//  In: in_left / in_right are the input's samples, new at each snd_tick
+//  (88,200 Hz). A frame's sample is the mean of the 2 to 12 its ticks
+//  brought (the sum times 65536 / the count, a multiplier; a boxcar, whose
+//  zeros fall on the frame rate's multiples). While the in channel is
+//  active, each frame puts its 4 bytes (left then right, in the order the
+//  out channel's have) into a FIFO of 8 that the channel takes (di_valid /
+//  di_take), two clocks after the frame; a frame that finds more than 4
+//  bytes there is lost (an overrun). Emptied while the channel is not
+//  active. Whatever input the codec's register 0 selects (CD, line,
+//  microphone), it is this one, at this gain.
 //
 //  Time: snd_tick comes at twice 44,100 Hz (88,200 Hz); a frame is 2, 3,
 //  4, 5, 6, 8, 10 or 12 ticks.
@@ -49,7 +56,8 @@
 //  Left out (docs/MacPPC7300_stubs.md): the codec's own registers (gain,
 //  attenuation and mute change nothing: dingusppc ignores them too), the
 //  interrupt (port change, error; Grand Central's source 11), the
-//  audio processor on Cuda's I2C (dingusppc's TDA7433 at 45), a real input.
+//  audio processor on Cuda's I2C (dingusppc's TDA7433 at 45), the input's
+//  selection and gain.
 //
 //============================================================================
 
@@ -78,6 +86,10 @@ module MacPPC7300_awacs
 	output logic        di_valid,
 	output logic [7:0]  di_data,
 	input  logic        di_take,
+
+	// the input's samples, signed, new at each snd_tick
+	input  logic signed [15:0] in_left,
+	input  logic signed [15:0] in_right,
 
 	// the samples played, signed, changing at the frame rate
 	output logic [15:0] left,
@@ -145,10 +157,35 @@ assign do_ready = o_n < 4'd8 && out_active;
 wire   o_pop    = frame && o_n >= 4'd4;    // a whole frame leaves
 wire [7:0] b0 = ob[o_rd], b1 = ob[3'(o_rd + 3'd1)], b2 = ob[3'(o_rd + 3'd2)], b3 = ob[3'(o_rd + 3'd3)];
 
-// ---- in: a count of zero bytes ------------------------------------------------------------
-logic [3:0] i_n;
+// ---- in: the frame's mean, then an 8-byte FIFO ----------------------------------------------
+logic signed [19:0] acc_l, acc_r;          // the frame's samples so far
+logic signed [19:0] sum_l, sum_r;          // a whole frame's
+logic signed [37:0] prod_l, prod_r;        // times 65536 / the samples in a frame
+logic [1:0]  i_st;                         // a frame ended 1 (bit 0) and 2 (bit 1) clocks ago
+logic [16:0] recip;                        // rounded down, so that 12 full-scale samples stay in 16 bits
+always_comb begin
+	case (fdiv)
+		4'd2:    recip = 17'd32768;
+		4'd3:    recip = 17'd21845;
+		4'd4:    recip = 17'd16384;
+		4'd5:    recip = 17'd13107;
+		4'd6:    recip = 17'd10922;
+		4'd8:    recip = 17'd8192;
+		4'd10:   recip = 17'd6553;
+		default: recip = 17'd5461;
+	endcase
+end
+wire signed [19:0] in_l20 = {{4{in_left[15]}}, in_left};
+wire signed [19:0] in_r20 = {{4{in_right[15]}}, in_right};
+wire [15:0] i_l = prod_l[31:16], i_r = prod_r[31:16];
+
+logic [7:0] ib [8];
+logic [2:0] i_rd;                          // the oldest byte
+logic [3:0] i_n;                           // bytes held
 assign di_valid = i_n != 4'd0;
-assign di_data  = 8'h00;
+assign di_data  = ib[i_rd];
+wire        i_push = i_st[1] && in_active && i_n <= 4'd4;
+wire [2:0]  i_wr   = i_rd + i_n[2:0];
 
 always_ff @(posedge clk) begin
 	if (snd_tick) ftick <= frame ? 4'd0 : ftick + 4'd1;
@@ -165,8 +202,33 @@ always_ff @(posedge clk) begin
 	if (frame && out_active) frame_count <= frame_count + 32'd1;
 
 	// in
-	if (!in_active) i_n <= 4'd0;
-	else i_n <= i_n - (di_take ? 4'd1 : 4'd0) + ((frame && i_n <= 4'd4) ? 4'd4 : 4'd0);
+	if (snd_tick) begin
+		acc_l <= frame ? 20'sd0 : acc_l + in_l20;
+		acc_r <= frame ? 20'sd0 : acc_r + in_r20;
+		if (frame) begin
+			sum_l <= acc_l + in_l20;
+			sum_r <= acc_r + in_r20;
+		end
+	end
+	i_st <= {i_st[0], frame};
+	if (i_st[0]) begin
+		prod_l <= sum_l * $signed({1'b0, recip});
+		prod_r <= sum_r * $signed({1'b0, recip});
+	end
+	if (i_push) begin
+		ib[i_wr]            <= byte_swap ? i_l[7:0]  : i_l[15:8];
+		ib[3'(i_wr + 3'd1)] <= byte_swap ? i_l[15:8] : i_l[7:0];
+		ib[3'(i_wr + 3'd2)] <= byte_swap ? i_r[7:0]  : i_r[15:8];
+		ib[3'(i_wr + 3'd3)] <= byte_swap ? i_r[15:8] : i_r[7:0];
+	end
+	if (!in_active) begin
+		i_n  <= 4'd0;
+		i_rd <= 3'd0;
+	end
+	else begin
+		i_n <= i_n - (di_take ? 4'd1 : 4'd0) + (i_push ? 4'd4 : 4'd0);
+		if (di_take) i_rd <= i_rd + 3'd1;
+	end
 
 	// the registers
 	if (sel) begin
@@ -190,6 +252,12 @@ always_ff @(posedge clk) begin
 		o_rd        <= 3'd0;
 		o_n         <= 4'd0;
 		i_n         <= 4'd0;
+		i_rd        <= 3'd0;
+		i_st        <= 2'b00;
+		acc_l       <= 20'sd0;
+		acc_r       <= 20'sd0;
+		sum_l       <= 20'sd0;
+		sum_r       <= 20'sd0;
 		left        <= 16'h0;
 		right       <= 16'h0;
 	end

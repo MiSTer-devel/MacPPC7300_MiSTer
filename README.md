@@ -16,8 +16,8 @@ The bitstreams are in [`releases/`](releases/):
 
 | File | CPU clock |
 |---|---|
-| `MacPPC7300_OC_20261022.rbf` | 100 MHz, about 40 % faster. Works on the DE10-Nano, MiSTer Pi and SuperStation. |
-| `MacPPC7300_20261022.rbf` | 70 MHz, the speed the design is timed for. Use it on other hardware, or if the 100 MHz file gives a black screen, a grey screen or a crash at "Welcome to Mac OS". |
+| `MacPPC7300_OC_20261113.rbf` | 100 MHz, about 40 % faster. Works on the DE10-Nano, MiSTer Pi and SuperStation. |
+| `MacPPC7300_20261113.rbf` | 70 MHz, the speed the design is timed for. Use it on other hardware, or if the 100 MHz file gives a black screen, a grey screen or a crash at "Welcome to Mac OS". |
 
 Both are the same machine and share the same `games/MacPPC7300/` folder and
 OSD settings.
@@ -82,7 +82,18 @@ still runs, without those three.
 ## What does not work (yet)
 
 - Writing to floppy disks. They show as locked.
-- Sound input. Recording gives silence.
+- Sound input records, but distorted, from a source plugged straight into
+  the jack. The OSD's Audio page has "Audio input" (Off, Mono, Stereo): the
+  ADC add-on's or the I/O board's audio-in jack (the DE10-nano's ADC,
+  channels 0 and 1) as the Mac's sound input, whichever source Mac OS
+  selects. Off records silence. The jack is wired straight to an ADC that
+  reads 0 to 4.096 V only, so the negative half of a line signal is lost
+  (the MiSTer wiki says the same of this input: enough for tape, not for
+  audio). A clean recording needs a capacitor and two resistors a channel
+  between the source and the jack, which lift the signal to the middle of
+  that range: [docs/MacPPC7300_sound.md](docs/MacPPC7300_sound.md), "The
+  audio-in jack". Keep the source's volume low without them: a full line
+  level swings further below ground than the ADC's pins are rated for.
 - The printer port has no line, so there's no LocalTalk network or printer
   on it.
 - No external SCSI bus and no PCI cards.

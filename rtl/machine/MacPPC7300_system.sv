@@ -77,6 +77,13 @@ module MacPPC7300_system
 	output logic [15:0]  snd_left,
 	output logic [15:0]  snd_right,
 
+	// the sound AWACS records: the board's ADC (MacPPC7300_adc), its pins
+	input  logic [1:0]   adc_mode,        // 0 off (silence), 1 mono, 2 stereo
+	output logic         adc_convst,
+	output logic         adc_sck,
+	output logic         adc_sdi,
+	input  logic         adc_sdo,
+
 	// Grand Central's NVRAM written from outside, a byte a cycle in the
 	// CPU's clock, while reset is held; or read from outside (nv_ld_re held
 	// until nv_ld_rack, the byte in nv_ld_q then); nv_wr_cpu marks the CPU's
@@ -282,6 +289,7 @@ MacPPC7300_machine #(.CPU_HZ(CPU_HZ), .CPU_HZ_FAST(CPU_HZ_FAST), .TB_HZ(TB_HZ), 
 	.fd_mounted, .fd_lba, .fd_rd, .fd_blk_cnt, .fd_ack,
 	.dma_wr, .dma_wr_line, .dma_wr_addr, .dma_wr_be, .dma_wr_data,
 	.modem_txd, .modem_rxd, .modem_cts, .modem_rts, .modem_midi, .snd_left, .snd_right, .snd_frame,
+	.adc_mode, .adc_convst, .adc_sck, .adc_sdi, .adc_sdo,
 	.net_link, .net_tx_we, .net_tx_wa, .net_tx_wd, .net_tx_go, .net_tx_len, .net_tx_done,
 	.net_rx_ra, .net_rx_q, .net_rx_avail, .net_rx_len, .net_rx_done, .net_mac, .net_mac_ok,
 	.nv_ld_we, .nv_ld_re, .nv_ld_addr, .nv_ld_data, .nv_ld_rack, .nv_ld_q, .nv_wr_cpu,
